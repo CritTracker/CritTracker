@@ -23,7 +23,7 @@ local CT = CritTracker
 local frame = CreateFrame("Frame")
 frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
-frame:RegisterEvent("PLAYER_ENTERING_WORLD")
+frame:RegisterEvent("PLAYER_LOGIN")
 frame:RegisterEvent("PLAYER_LOGOUT")
 
 -- Print to chat
@@ -554,9 +554,9 @@ frame:SetScript("OnEvent", function(self, event, ...)
         CT:Init(addonName)
     elseif event == "COMBAT_LOG_EVENT_UNFILTERED" then
         CT:ProcessCombatLog()
-    elseif event == "PLAYER_ENTERING_WORLD" then
+    elseif event == "PLAYER_LOGIN" then
         -- Welcome message when entering world or after /reload
-        CT:Print("v1.2 loaded successfully! Tracking enabled. Type /ct help for commands.")
+        CT:Print("loaded successfully! Tracking enabled. Type /ct help for commands.")
     elseif event == "PLAYER_LOGOUT" then
         CT:SaveData()
     end
