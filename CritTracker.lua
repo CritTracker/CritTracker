@@ -86,6 +86,11 @@ function CT:Init(addonName)
     self.initialized = true
 end
 
+-- Update the player login message
+function CT:ShowWelcomeMessage()
+    self:Print("loaded successfully! Type /ct to open settings or /ct help for commands.")
+end
+
 -- Deep copy a table
 function CopyTable(src)
     local copy = {}
@@ -276,120 +281,50 @@ function CT:ToggleSetting(settingName, displayName, value)
     end
 end
 
--- Handle slash commands - simplified with helper function
+-- Handle slash commands - simplified version
 function CT:HandleCommand(msg)
     local args = {}
     for arg in string.gmatch(string.lower(msg or ""), "%S+") do
         table.insert(args, arg)
     end
     
-    local command = args[1] or "help"
+    local command = args[1] or "config"
     
     if command == "help" then
         self:Print("Commands:")
+        self:Print("/ct - Open configuration panel")
         self:Print("/ct help - Show this help")
-        self:Print("/ct on - Enable tracking")
-        self:Print("/ct off - Disable tracking")
-        self:Print("/ct party on/off - Toggle party announcements")
-        self:Print("/ct raid on/off - Toggle raid announcements")
-        self:Print("/ct sound on/off - Toggle sound effects")
-        self:Print("/ct soundtype [1, 2, 3, 4, 5, 6] - Select a sound to play on new crit record")
-        self:Print("/ct report [spell ability heal melee wand all] - Show highest crits")
-        self:Print("/ct reset [spell ability heal melee wand all] - Reset records")
-        self:Print("/ct config - Open configuration panel")
-    elseif command == "on" then
-        self.settings.enabled = true
-        self:Print("Tracking enabled.")
-    elseif command == "off" then
-        self.settings.enabled = false
-        self:Print("Tracking disabled.")
-    elseif command == "party" then
-        self:ToggleSetting("announceParty", "Party announcements", args[2])
-    elseif command == "raid" then
-        self:ToggleSetting("announceRaid", "Raid announcements", args[2])
-    elseif command == "sound" then
-        self:ToggleSetting("playSoundOnRecord", "Sound effects", args[2])
-	elseif command == "soundtype" then
-		if args[2] then
-			-- Check if argument is a number first
-			local soundNumber = tonumber(args[2])
-			local found = false
-			
-			if soundNumber and soundNumber >= 1 and soundNumber <= #self.sounds then
-				-- User specified a sound by number
-				local sound = self.sounds[soundNumber]
-				self.settings.recordSound = sound.value
-				self:Print("Record sound set to: " .. sound.text)
-				PlaySound(sound.soundID)
-				found = true
-			else
-				-- Try to find the sound by name (case-insensitive)
-				local soundArg = string.lower(args[2])
-				for _, sound in ipairs(self.sounds) do
-					if string.lower(sound.value) == soundArg then
-						self.settings.recordSound = sound.value
-						self:Print("Record sound set to: " .. sound.text)
-						found = true
-						PlaySound(sound.soundID)
-						break
-					end
-				end
-			end
-			
-			if not found then
-				-- Display available options if not found
-				self:Print("Sound '" .. args[2] .. "' not found. Available options:")
-				for i, sound in ipairs(self.sounds) do
-					self:Print("  " .. i .. ". " .. sound.text .. " (/ct soundtype " .. sound.value .. ")")
-				end
-			end
-		else
-			-- List available sounds
-			self:Print("Available sound options:")
-			for i, sound in ipairs(self.sounds) do
-				local current = ""
-				if sound.value == self.settings.recordSound then
-					current = " (current)"
-				end
-				self:Print("  " .. i .. ". " .. sound.text .. " (/ct soundtype " .. sound.value .. " or /ct soundtype " .. i .. ")" .. current)
-			end
-		end
-	elseif command == "testsound" then
-		-- Play the currently selected sound
-		for _, sound in ipairs(self.sounds) do
-			if sound.value == self.settings.recordSound then
-				self:Print("Playing sound: " .. sound.text)
-				PlaySound(sound.soundID)
-				break
-			end
-		end
-		elseif command == "report" then
-			local category = args[2] or "all"
-			self:ShowHighestCrits(category)
-		elseif command == "reset" then
-			local category = args[2] or "all"
-			self:ResetRecords(category)
-		elseif command == "config" then
-			-- Create the config panel if it doesn't exist
-			if not self.configFrame then
-				self:CreateConfigPanel()
-			end
-			
-			-- Show/hide toggle
-			if self.configFrame:IsVisible() then
-				self.configFrame:Hide()
-				self:Print("Configuration window closed.")
-			else
-				-- Hide any other instances that might exist
-				if CritTrackerConfigFrame and CritTrackerConfigFrame ~= self.configFrame then
-					CritTrackerConfigFrame:Hide()
-				end
-				
-				self.configFrame:Show()
-			end
-		else
-			self:Print("Unknown command. Type /ct help for available commands.")
-		end
+        self:Print("/ct toggle - Quickly enable/disable tracking")
+        self:Print("/ct report [all/spell/ability/heal/melee/wand] - Show highest crits")
+        self:Print("/ct reset - Reset all records (with confirmation)")
+    elseif command == "toggle" then
+        self.settings.enabled = not self.settings.enabled
+        self:Print("Tracking " .. (self.settings.enabled and "enabled" or "disabled") .. ".")
+    elseif command == "report" then
+        local category = args[2] or "all"
+        self:ShowHighestCrits(category)
+    elseif command == "reset" then
+        -- Always show confirmation dialog
+        StaticPopup_Show("CRITTRACKER_RESET_CONFIRM")
+    else
+        -- Default action: open config panel (if no command or unknown command)
+        -- Create the config panel if it doesn't exist
+        if not self.configFrame then
+            self:CreateConfigPanel()
+        end
+        
+        -- Show panel if not visible
+        if not self.configFrame:IsVisible() then
+            -- Hide any other instances that might exist
+            if CritTrackerConfigFrame and CritTrackerConfigFrame ~= self.configFrame then
+                CritTrackerConfigFrame:Hide()
+            end
+            self.configFrame:Show()
+        else
+            self.configFrame:Hide()
+            self:Print("Configuration window closed.")
+        end
+    end
 end
 
 -- Reset records
@@ -639,7 +574,7 @@ frame:SetScript("OnEvent", function(self, event, ...)
         CT:ProcessCombatLog()
     elseif event == "PLAYER_LOGIN" then
         -- Welcome message when entering world or after /reload
-        CT:Print("loaded successfully! Tracking enabled. Type /ct help for commands.")
+        CT:ShowWelcomeMessage()
     elseif event == "PLAYER_LOGOUT" then
         CT:SaveData()
     end
