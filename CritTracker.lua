@@ -14,7 +14,7 @@ CritTracker = {
         announceParty = true,
         announceRaid = true,
         playSoundOnRecord = true,
-		recordSound = "AUCTION_CREATED" -- Default sound
+        recordSound = "AUCTION_CREATED" -- Default sound
     }
 }
 
@@ -121,6 +121,48 @@ function CT:CreateCheckButton(parent, x, y, settingName, labelText)
     return checkBtn, y - 25 -- Return button and new y position
 end
 
+-- Helper function to create dropdown menu
+function CT:CreateDropdown(parent, y, width, settingName, labelText, options)
+    -- Create label
+    local label = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    label:SetPoint("TOPLEFT", 25, y)
+    label:SetText(labelText)
+    
+    -- Create dropdown frame
+    local dropdown = CreateFrame("Frame", "CritTracker_"..settingName.."Dropdown", parent, "UIDropDownMenuTemplate")
+    dropdown:SetPoint("TOPLEFT", 20, y - 20)
+    UIDropDownMenu_SetWidth(dropdown, width)
+    
+    -- Initialize dropdown
+    UIDropDownMenu_Initialize(dropdown, function(self, level)
+        local info = UIDropDownMenu_CreateInfo()
+        for _, option in ipairs(options) do
+            info.text = option.text
+            info.value = option.value
+            info.func = function(self)
+                CT.settings[settingName] = self.value
+                UIDropDownMenu_SetSelectedValue(dropdown, self.value)
+                CT:Print(labelText .. " set to " .. info.text)
+                
+                -- Play the selected sound as preview
+                for _, sound in ipairs(CT.sounds) do
+                    if sound.value == self.value then
+                        PlaySound(sound.soundID)
+                        break
+                    end
+                end
+            end
+            info.checked = (CT.settings[settingName] == option.value)
+            UIDropDownMenu_AddButton(info, level)
+        end
+    end)
+    
+    -- Set initial value
+    UIDropDownMenu_SetSelectedValue(dropdown, self.settings[settingName])
+    
+    return dropdown, y - 50 -- Return dropdown and new y position for next element
+end
+
 -- Create a standalone configuration frame
 function CT:CreateConfigPanel()
     -- Clean up any existing frames with the same name
@@ -155,6 +197,32 @@ function CT:CreateConfigPanel()
     _, newY = self:CreateCheckButton(frame, 20, newY, "announceParty", "Announce Records to Party")
     _, newY = self:CreateCheckButton(frame, 20, newY, "announceRaid", "Announce Records to Raid")
     _, newY = self:CreateCheckButton(frame, 20, newY, "playSoundOnRecord", "Play Sound on New Records")
+    
+    -- Add sound dropdown with more space
+    newY = newY - 10 -- Add extra space before the dropdown
+    _, newY = self:CreateDropdown(frame, newY, 180, "recordSound", "Record Sound", self.sounds)
+    
+    -- Add Test Sound button
+    local testSoundButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    testSoundButton:SetSize(100, 22)
+    testSoundButton:SetPoint("TOPLEFT", 30, newY - 15) -- Moved down by adjusting the Y coordinate
+    testSoundButton:SetText("Test Sound")
+    testSoundButton:SetScript("OnClick", function()
+        local selectedSound = CT.settings.recordSound
+        local soundID = 6227 -- Default fallback
+        
+        for _, sound in ipairs(CT.sounds) do
+            if sound.value == selectedSound then
+                soundID = sound.soundID
+                break
+            end
+        end
+        
+        PlaySound(soundID)
+        CT:Print("Testing sound: " .. selectedSound)
+    end)
+    
+    newY = newY - 40 -- Add space after the button
     
     -- Add Reset All Records button at bottom
     local resetButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
@@ -545,15 +613,15 @@ function CT:RecordCrit(category, name, amount)
         
         -- Play sound if enabled
         if self.settings.playSoundOnRecord then
-			local soundID = 6227 -- Default fallback
-			for _, sound in ipairs(self.sounds) do
-				if sound.value == self.settings.recordSound then
-					soundID = sound.soundID
-					break
-				end
-			end
-			PlaySound(soundID)
-		end
+            local soundID = 6227 -- Default fallback
+            for _, sound in ipairs(self.sounds) do
+                if sound.value == self.settings.recordSound then
+                    soundID = sound.soundID
+                    break
+                end
+            end
+            PlaySound(soundID)
+        end
     end
 end
 
