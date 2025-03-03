@@ -517,9 +517,9 @@ function CT:RecordCrit(category, name, amount)
         -- Format message
         local message
         if oldValue == 0 then
-            message = string.format("{rt8} New %s crit record: %s hit for %d {rt8}", categoryLabel, name, amount)
+            message = string.format("New %s crit record: %s hit for %d", categoryLabel, name, amount)
         else
-            message = string.format("{rt8} New %s crit record: %s hit for %d (prev: %d) {rt8}", categoryLabel, name, amount, oldValue)
+            message = string.format("New %s crit record: %s hit for %d (prev: %d)", categoryLabel, name, amount, oldValue)
         end
         
         -- Show message to player
