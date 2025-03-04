@@ -2,7 +2,7 @@
 ## Title: CritTracker
 ## Notes: Tracks critical hits for each specific spell, ability, melee, and wand attack
 ## Author: https://github.com/CritTracker
-## Version: 1.0
+## Version: 1.01
 ## SavedVariables: CritTrackerDB
 
 # Main addon file
