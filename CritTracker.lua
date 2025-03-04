@@ -14,20 +14,22 @@ CritTracker = {
         announceParty = true,
         announceRaid = true,
         playSoundOnRecord = true,
-        recordSound = "AUCTION_CREATED" -- Default sound
+        recordSound = "TAUREN" -- Default sound
     }
 }
 
 local CT = CritTracker
 
 CT.sounds = {
-    -- Sound options for dropdown
-    { text = "Auction Created", value = "AUCTION_CREATED", soundID = 6227 },
+    -- Sound options for dropdown with corrected IDs
     { text = "Raid Warning", value = "RAID_WARNING", soundID = 8959 },
-    { text = "Murloc Aggro", value = "IG_CREATURE_AGGRO_WARNING", soundID = 7184 },
-    { text = "Creature Moan", value = "CREATURE_IMPACT_SHOULDER_LEFT", soundID = 6222 },
-    { text = "Cow Moo", value = "IG_CREATURE_NEUTRAL_LOOP", soundID = 6916 },
-    { text = "Level Up", value = "LEVELUP", soundID = 888 }
+    { text = "Level Up", value = "LEVELUP", soundID = 888 },
+    { text = "Ready Check", value = "READY_CHECK", soundID = 8960 },
+    { text = "PVP Flag Taken", value = "PVP_FLAG", soundID = 8212 },
+    { text = "Treasure Pickup", value = "MONEY", soundID = 891 },
+	{ text = "Murloc Aggro", value = "MURLOC", soundID = 416 },
+    { text = "Tauren Proud", value = "TAUREN", soundID = 6366 },
+	{ text = "Succubus", value = "SUCCUBUS", soundID = 7096 },
 }
 
 -- Main addon frame
@@ -143,14 +145,6 @@ function CT:CreateDropdown(parent, y, width, settingName, labelText, options)
                 CT.settings[settingName] = self.value
                 UIDropDownMenu_SetSelectedValue(dropdown, self.value)
                 CT:Print(labelText .. " set to " .. info.text)
-                
-                -- Play the selected sound as preview
-                for _, sound in ipairs(CT.sounds) do
-                    if sound.value == self.value then
-                        PlaySound(sound.soundID)
-                        break
-                    end
-                end
             end
             info.checked = (CT.settings[settingName] == option.value)
             UIDropDownMenu_AddButton(info, level)
