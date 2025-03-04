@@ -28,6 +28,7 @@ CT.sounds = {
     { text = "PVP Flag Taken", value = "PVP_FLAG", soundID = 8212 },
     { text = "Treasure Pickup", value = "MONEY", soundID = 891 },
 	{ text = "Murloc Aggro", value = "MURLOC", soundID = 416 },
+	{ text = "Cheering Crowd", value = "CHEERS", soundID = 8571 },
     { text = "Tauren Proud", value = "TAUREN", soundID = 6366 },
 	{ text = "Succubus", value = "SUCCUBUS", soundID = 7096 },
 }
@@ -144,7 +145,7 @@ function CT:CreateDropdown(parent, y, width, settingName, labelText, options)
             info.func = function(self)
                 CT.settings[settingName] = self.value
                 UIDropDownMenu_SetSelectedValue(dropdown, self.value)
-                CT:Print(labelText .. " set to " .. info.text)
+                CT:Print(labelText .. " set to " .. self.value)
             end
             info.checked = (CT.settings[settingName] == option.value)
             UIDropDownMenu_AddButton(info, level)
