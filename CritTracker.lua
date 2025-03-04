@@ -14,19 +14,19 @@ CritTracker = {
         announceParty = true,
         announceRaid = true,
         playSoundOnRecord = true,
-        recordSound = "TAUREN" -- Default sound
+        recordSound = "MONEY" -- Default sound
     }
 }
 
 local CT = CritTracker
 
 CT.sounds = {
-    -- Sound options for dropdown with corrected IDs
+    -- Sound options for dropdown
     { text = "Raid Warning", value = "RAID_WARNING", soundID = 8959 },
     { text = "Level Up", value = "LEVELUP", soundID = 888 },
     { text = "Ready Check", value = "READY_CHECK", soundID = 8960 },
     { text = "PVP Flag Taken", value = "PVP_FLAG", soundID = 8212 },
-    { text = "Treasure Pickup", value = "MONEY", soundID = 891 },
+    { text = "Cash Money", value = "MONEY", soundID = 891 },
 	{ text = "Murloc Aggro", value = "MURLOC", soundID = 416 },
 	{ text = "Cheering Crowd", value = "CHEERS", soundID = 8571 },
     { text = "Tauren Proud", value = "TAUREN", soundID = 6366 },
@@ -107,7 +107,7 @@ function CopyTable(src)
     return copy
 end
 
--- Helper to create UI elements - reduces code duplication
+-- Helper to create UI elements
 function CT:CreateCheckButton(parent, x, y, settingName, labelText)
     local checkBtn = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
     checkBtn:SetPoint("TOPLEFT", 20, y)
@@ -145,7 +145,6 @@ function CT:CreateDropdown(parent, y, width, settingName, labelText, options)
             info.func = function(self)
                 CT.settings[settingName] = self.value
                 UIDropDownMenu_SetSelectedValue(dropdown, self.value)
-                CT:Print(labelText .. " set to " .. self.value)
             end
             info.checked = (CT.settings[settingName] == option.value)
             UIDropDownMenu_AddButton(info, level)
@@ -169,6 +168,10 @@ function CT:CreateConfigPanel()
     -- Create the main frame with a unique name using time to avoid conflicts
     local frameName = "CritTrackerConfigFrame"
     local frame = CreateFrame("Frame", frameName, UIParent, "BasicFrameTemplateWithInset")
+	
+	-- Close frame when Escape key is pressed
+    table.insert(UISpecialFrames, frameName)
+	
     frame:SetSize(400, 450)
     frame:SetPoint("CENTER")
     frame:EnableMouse(true)
@@ -187,20 +190,20 @@ function CT:CreateConfigPanel()
     -- Settings
     local y = -40  -- Starting vertical position
     
-    -- Use helper function to create checkboxes with less code
+    -- Use helper function to create checkboxes
     local _, newY = self:CreateCheckButton(frame, 20, y, "enabled", "Enable Tracking")
     _, newY = self:CreateCheckButton(frame, 20, newY, "announceParty", "Announce Records to Party")
     _, newY = self:CreateCheckButton(frame, 20, newY, "announceRaid", "Announce Records to Raid")
     _, newY = self:CreateCheckButton(frame, 20, newY, "playSoundOnRecord", "Play Sound on New Records")
     
-    -- Add sound dropdown with more space
-    newY = newY - 10 -- Add extra space before the dropdown
+    -- Add sound dropdown
+    newY = newY - 10
     _, newY = self:CreateDropdown(frame, newY, 180, "recordSound", "Record Sound", self.sounds)
     
     -- Add Test Sound button
     local testSoundButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
     testSoundButton:SetSize(100, 22)
-    testSoundButton:SetPoint("TOPLEFT", 30, newY - 15) -- Moved down by adjusting the Y coordinate
+    testSoundButton:SetPoint("TOPLEFT", 30, newY - 15)
     testSoundButton:SetText("Test Sound")
     testSoundButton:SetScript("OnClick", function()
         local selectedSound = CT.settings.recordSound
@@ -214,7 +217,6 @@ function CT:CreateConfigPanel()
         end
         
         PlaySound(soundID)
-        CT:Print("Testing sound: " .. selectedSound)
     end)
     
     newY = newY - 40 -- Add space after the button
