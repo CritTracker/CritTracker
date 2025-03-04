@@ -42,7 +42,7 @@ frame:RegisterEvent("PLAYER_LOGOUT")
 
 -- Print to chat
 function CT:Print(msg)
-    DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99CritTracker|r: " .. msg)
+    DEFAULT_CHAT_FRAME:AddMessage(msg)
 end
 
 -- Clean spell name (used in multiple places)
@@ -91,7 +91,7 @@ end
 
 -- Update the player login message
 function CT:ShowWelcomeMessage()
-    self:Print("loaded successfully! Type /ct to open settings or /ct help for commands.")
+    self:Print("|cffff8800[CritTracker]|r Loaded (v1.03) Type /ct to open settings or /ct help for commands.")
 end
 
 -- Deep copy a table
@@ -273,7 +273,7 @@ function CT:SetupTooltips()
         if spellName == "Shoot" then
             if CT.highestCrits.wand.value > 0 then
                 tooltip:AddLine(" ")
-                tooltip:AddLine("|cffff8800CritTracker:|r")
+                tooltip:AddLine("|cffff8800[CritTracker]|r ")
                 found = true
                 
                 local record = CT.highestCrits.wand
@@ -294,7 +294,7 @@ function CT:SetupTooltips()
                     if string.lower(storedSpellName) == string.lower(spellName) and data.value > 0 then
                         if not found then
                             tooltip:AddLine(" ")
-                            tooltip:AddLine("|cffff8800CritTracker:|r")
+                            tooltip:AddLine("|cffff8800[CritTracker]|r ")
                             found = true
                         end
                         
@@ -356,7 +356,7 @@ function CT:HandleCommand(msg)
     local command = args[1] or "config"
     
     if command == "help" then
-        self:Print("Commands:")
+        self:Print("|cffff8800[CritTracker]|r Commands:")
         self:Print("/ct - Open configuration panel")
         self:Print("/ct help - Show this help")
         self:Print("/ct toggle - Quickly enable/disable tracking")
@@ -387,7 +387,6 @@ function CT:HandleCommand(msg)
             self.configFrame:Show()
         else
             self.configFrame:Hide()
-            self:Print("Configuration window closed.")
         end
     end
 end
@@ -403,30 +402,30 @@ function CT:ResetRecords(category)
             wand = {value = 0, timestamp = 0},
             heals = {}
         }
-        self:Print("All critical hit records have been reset.")
+        self:Print("|cffff8800[CritTracker]|r All critical hit records have been reset.")
     elseif category == "spell" then
         self.highestCrits.spells = {}
-        self:Print("All spell critical hit records have been reset.")
+        self:Print("|cffff8800[CritTracker]|r All spell critical hit records have been reset.")
     elseif category == "ability" then
         self.highestCrits.abilities = {}
-        self:Print("All ability critical hit records have been reset.")
+        self:Print("|cffff8800[CritTracker]|r All ability critical hit records have been reset.")
     elseif category == "heal" then
         self.highestCrits.heals = {}
-        self:Print("All healing critical hit records have been reset.")
+        self:Print("|cffff8800[CritTracker]|r All healing critical hit records have been reset.")
     elseif category == "melee" then
         self.highestCrits.melee = {value = 0, timestamp = 0}
-        self:Print("Melee critical hit record has been reset.")
+        self:Print("|cffff8800[CritTracker]|r Melee critical hit record has been reset.")
     elseif category == "wand" then
         self.highestCrits.wand = {value = 0, timestamp = 0}
-        self:Print("Wand critical hit record has been reset.")
+        self:Print("|cffff8800[CritTracker]|r Wand critical hit record has been reset.")
     else
-        self:Print("Unknown category. Use spell, ability, heal, melee, wand, or all.")
+        self:Print("|cffff8800[CritTracker]|r Unknown category. Use spell, ability, heal, melee, wand, or all.")
     end
 end
 
 -- Helper function for ShowHighestCrits
 function CT:DisplayCritList(items, label)
-    self:Print("|cffff8800Highest " .. label .. " Critical Hits:|r")
+    self:Print("|cffff8800[CritTracker]|r Highest " .. label .. " Critical Hits:|r")
     
     if #items == 0 then
         self:Print("  None recorded")
@@ -488,7 +487,7 @@ function CT:ShowHighestCrits(category)
     
     -- For single record categories (melee, wand)
     if category == "all" or category == "melee" then
-        self:Print("|cffff8800Highest Melee Critical Hit:|r")
+        self:Print("|cffff8800[CritTracker]|r Highest Melee Critical Hit:")
         if self.highestCrits.melee.value > 0 then
             local timeAgo = self:FormatTimeAgo(self.highestCrits.melee.timestamp)
             self:Print("  Melee Attack: " .. self.highestCrits.melee.value .. " " .. timeAgo)
@@ -498,7 +497,7 @@ function CT:ShowHighestCrits(category)
     end
     
     if category == "all" or category == "wand" then
-        self:Print("|cffff8800Highest Wand Critical Hit:|r")
+        self:Print("|cffff8800[CritTracker]|r Highest Wand Critical Hit:")
         if self.highestCrits.wand.value > 0 then
             local timeAgo = self:FormatTimeAgo(self.highestCrits.wand.timestamp)
             self:Print("  Wand Shot: " .. self.highestCrits.wand.value .. " " .. timeAgo)
@@ -593,9 +592,9 @@ function CT:RecordCrit(category, name, amount)
         -- Format message
         local message
         if oldValue == 0 then
-            message = string.format("New %s crit record: %s hit for %d", categoryLabel, name, amount)
+            message = string.format("|cffff8800[CritTracker]|r New |cFF00CCFF%s|r crit record: |cffA335EE%s|r hit for: |cffff0000%d|r", categoryLabel, name, amount)
         else
-            message = string.format("New %s crit record: %s hit for %d (prev: %d)", categoryLabel, name, amount, oldValue)
+            message = string.format("|cffff8800[CritTracker]|r New |cFF00CCFF%s|r crit record: |cffA335EE%s|r hit for: |cffff0000%d|r (prev: %d)", categoryLabel, name, amount, oldValue)
         end
         
         -- Show message to player
