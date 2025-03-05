@@ -91,7 +91,7 @@ end
 
 -- Update the player login message
 function CT:ShowWelcomeMessage()
-    self:Print("|cffff8800[CritTracker]|r Loaded (v1.03) Type /ct to open settings or /ct help for commands.")
+    self:Print("|cff00ff00CritTracker|r Loaded! Type /ct to open settings or /ct help for commands.")
 end
 
 -- Deep copy a table
@@ -273,12 +273,12 @@ function CT:SetupTooltips()
         if spellName == "Shoot" then
             if CT.highestCrits.wand.value > 0 then
                 tooltip:AddLine(" ")
-                tooltip:AddLine("|cffff8800[CritTracker]|r ")
+                tooltip:AddLine("|cffff8800CritTracker|r ")
                 found = true
                 
                 local record = CT.highestCrits.wand
                 local timeAgo = CT:FormatTimeAgo(record.timestamp)
-                tooltip:AddLine("Highest Wand crit: |cffff0000" .. record.value .. "|r " .. timeAgo)
+                tooltip:AddLine("Highest crit: |cffff0000" .. record.value .. "|r " .. timeAgo)
             end
         else
             -- Check regular spell categories
@@ -294,12 +294,12 @@ function CT:SetupTooltips()
                     if string.lower(storedSpellName) == string.lower(spellName) and data.value > 0 then
                         if not found then
                             tooltip:AddLine(" ")
-                            tooltip:AddLine("|cffff8800[CritTracker]|r ")
+                            tooltip:AddLine("|cffff8800CritTracker|r ")
                             found = true
                         end
                         
                         local timeAgo = CT:FormatTimeAgo(data.timestamp)
-                        tooltip:AddLine("Highest " .. category.label .. " crit: |cffff0000" .. data.value .. "|r " .. timeAgo)
+                        tooltip:AddLine("Highest crit: |cffff0000" .. data.value .. "|r " .. timeAgo)
                     end
                 end
             end
@@ -322,6 +322,8 @@ function CT:FormatTimeAgo(timestamp)
         return "(just now)"
     elseif diff < 3600 then
         return string.format("(%d min ago)", math.floor(diff / 60))
+	elseif diff < 7200 then
+        return "(1 hour ago)"
     elseif diff < 86400 then
         return string.format("(%d hours ago)", math.floor(diff / 3600))
     else
@@ -592,7 +594,7 @@ function CT:RecordCrit(category, name, amount)
         -- Format local message
         local message
         if oldValue == 0 then
-            message = string.format("|cffff8800[CritTracker]|r New |cFF00CCFF%s|r crit record: |cffA335EE%s|r hit for: |cffff0000%d|r", categoryLabel, name, amount)
+            message = string.format("|cff008800[CritTracker]|r New |cFF00CCFF%s|r crit record: |cffA335EE%s|r hit for: |cffff0000%d|r", categoryLabel, name, amount)
         else
             message = string.format("|cffff8800[CritTracker]|r New |cFF00CCFF%s|r crit record: |cffA335EE%s|r hit for: |cffff0000%d|r (prev: %d)", categoryLabel, name, amount, oldValue)
         end
@@ -605,9 +607,9 @@ function CT:RecordCrit(category, name, amount)
 		 -- Format socialmessage
   
         if oldValue == 0 then
-            socialmessage = string.format("[CritTracker] New %s crit record: %s hit for: %d", categoryLabel, name, amount)
+            socialmessage = string.format("[CritTracker] New %s crit record! %s hit for: %d", categoryLabel, name, amount)
         else
-            socialmessage = string.format("[CritTracker] New %s crit record: %s hit for: %d (prev: %d)", categoryLabel, name, amount, oldValue)
+            socialmessage = string.format("[CritTracker] New %s crit record! %s hit for: %d (prev: %d)", categoryLabel, name, amount, oldValue)
         end
         -- Announce to party/raid if appropriate
         if IsInRaid() and self.settings.announceRaid then
