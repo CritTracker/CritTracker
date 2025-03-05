@@ -589,7 +589,7 @@ function CT:RecordCrit(category, name, amount)
         elseif category == "wand" then categoryLabel = "WAND"
         end
         
-        -- Format message
+        -- Format local message
         local message
         if oldValue == 0 then
             message = string.format("|cffff8800[CritTracker]|r New |cFF00CCFF%s|r crit record: |cffA335EE%s|r hit for: |cffff0000%d|r", categoryLabel, name, amount)
@@ -599,12 +599,21 @@ function CT:RecordCrit(category, name, amount)
         
         -- Show message to player
         self:Print(message)
-        
+		
+		-- Set up message with no colors for party/raid announce
+        local socialmessage
+		 -- Format socialmessage
+  
+        if oldValue == 0 then
+            socialmessage = string.format("[CritTracker] New %s crit record: %s hit for: %d", categoryLabel, name, amount)
+        else
+            socialmessage = string.format("[CritTracker] New %s crit record: %s hit for: %d (prev: %d)", categoryLabel, name, amount, oldValue)
+        end
         -- Announce to party/raid if appropriate
         if IsInRaid() and self.settings.announceRaid then
-            SendChatMessage(message, "RAID")
+            SendChatMessage(socialmessage, "RAID")
         elseif IsInGroup() and not IsInRaid() and self.settings.announceParty then
-            SendChatMessage(message, "PARTY")
+            SendChatMessage(socialmessage, "PARTY")
         end
         
         -- Play sound if enabled
