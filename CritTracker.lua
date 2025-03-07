@@ -2,6 +2,15 @@
 -- Tracks your highest critical hits per specific spell/ability
 
 CritTracker = {
+    -- Constants for category names to avoid string literals
+    CATEGORIES = {
+        SPELLS = "spells",
+        ABILITIES = "abilities",
+        MELEE = "melee",
+        WAND = "wand",
+        HEALS = "heals"
+    },
+    
     highestCrits = {
         spells = {},    -- Key: spellName, Value: {value = number, timestamp = time}
         abilities = {}, -- Key: abilityName, Value: {value = number, timestamp = time}
@@ -15,7 +24,9 @@ CritTracker = {
         announceRaid = true,
         playSoundOnRecord = true,
         recordSound = "MONEY" -- Default sound
-    }
+    },
+    -- Cache player GUID to avoid repeated calls
+    playerGUID = nil
 }
 
 local CT = CritTracker
@@ -27,10 +38,10 @@ CT.sounds = {
     { text = "Ready Check", value = "READY_CHECK", soundID = 8960 },
     { text = "PVP Flag Taken", value = "PVP_FLAG", soundID = 8212 },
     { text = "Cash Money", value = "MONEY", soundID = 891 },
-	{ text = "Murloc Aggro", value = "MURLOC", soundID = 416 },
-	{ text = "Cheering Crowd", value = "CHEERS", soundID = 8571 },
+    { text = "Murloc Aggro", value = "MURLOC", soundID = 416 },
+    { text = "Cheering Crowd", value = "CHEERS", soundID = 8571 },
     { text = "Tauren Proud", value = "TAUREN", soundID = 6366 },
-	{ text = "Succubus", value = "SUCCUBUS", soundID = 7096 },
+    { text = "Succubus", value = "SUCCUBUS", soundID = 7096 },
 }
 
 -- Main addon frame
@@ -45,7 +56,20 @@ function CT:Print(msg)
     DEFAULT_CHAT_FRAME:AddMessage(msg)
 end
 
--- Clean spell name (used in multiple places)
+-- Deep copy a table
+function CT:CopyTable(src)
+    local copy = {}
+    for k, v in pairs(src) do
+        if type(v) == "table" then
+            copy[k] = self:CopyTable(v)
+        else
+            copy[k] = v
+        end
+    end
+    return copy
+end
+
+-- Clean spell name 
 function CT:CleanSpellName(spellName)
     if not spellName then return spellName end
     spellName = string.gsub(spellName, "%s+%(Rank%s+%d+%)", "")
@@ -55,6 +79,9 @@ end
 -- Initialize
 function CT:Init(addonName)
     if addonName ~= "CritTracker" then return end
+    
+    -- Cache player GUID for performance
+    self.playerGUID = UnitGUID("player")
     
     -- Load saved variables
     if CritTrackerDB then
@@ -71,7 +98,7 @@ function CT:Init(addonName)
         if CritTrackerDB.highestCrits then
             for category, data in pairs(CritTrackerDB.highestCrits) do
                 if self.highestCrits[category] then
-                    self.highestCrits[category] = CopyTable(data)
+                    self.highestCrits[category] = self:CopyTable(data)
                 end
             end
         end
@@ -91,23 +118,10 @@ end
 
 -- Update the player login message
 function CT:ShowWelcomeMessage()
-    self:Print("|cff00ff00CritTracker|r Loaded! Type /ct to open settings or /ct help for commands.")
+    self:Print("|cffff8800[CritTracker]|r Loaded. Type /ct to open settings or /ct help for commands.")
 end
 
--- Deep copy a table
-function CopyTable(src)
-    local copy = {}
-    for k, v in pairs(src) do
-        if type(v) == "table" then
-            copy[k] = CopyTable(v)
-        else
-            copy[k] = v
-        end
-    end
-    return copy
-end
-
--- Helper to create UI elements
+-- Helper to create UI elements - consolidated function
 function CT:CreateCheckButton(parent, x, y, settingName, labelText)
     local checkBtn = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
     checkBtn:SetPoint("TOPLEFT", 20, y)
@@ -124,15 +138,16 @@ function CT:CreateCheckButton(parent, x, y, settingName, labelText)
     return checkBtn, y - 25 -- Return button and new y position
 end
 
--- Helper function to create dropdown menu
+-- Helper function to create dropdown menu - avoids taint issues with unique name
 function CT:CreateDropdown(parent, y, width, settingName, labelText, options)
     -- Create label
     local label = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     label:SetPoint("TOPLEFT", 25, y)
     label:SetText(labelText)
     
-    -- Create dropdown frame
-    local dropdown = CreateFrame("Frame", "CritTracker_"..settingName.."Dropdown", parent, "UIDropDownMenuTemplate")
+    -- Create dropdown frame with unique name to avoid taint
+    local dropdownName = "CritTracker_"..settingName.."Dropdown_"..tostring(GetTime()):gsub("%.", "")
+    local dropdown = CreateFrame("Frame", dropdownName, parent, "UIDropDownMenuTemplate")
     dropdown:SetPoint("TOPLEFT", 20, y - 20)
     UIDropDownMenu_SetWidth(dropdown, width)
     
@@ -168,10 +183,10 @@ function CT:CreateConfigPanel()
     -- Create the main frame with a unique name using time to avoid conflicts
     local frameName = "CritTrackerConfigFrame"
     local frame = CreateFrame("Frame", frameName, UIParent, "BasicFrameTemplateWithInset")
-	
-	-- Close frame when Escape key is pressed
+    
+    -- Close frame when Escape key is pressed
     table.insert(UISpecialFrames, frameName)
-	
+    
     frame:SetSize(400, 450)
     frame:SetPoint("CENTER")
     frame:EnableMouse(true)
@@ -206,8 +221,9 @@ function CT:CreateConfigPanel()
     testSoundButton:SetPoint("TOPLEFT", 30, newY - 15)
     testSoundButton:SetText("Test Sound")
     testSoundButton:SetScript("OnClick", function()
+        -- Improved sound selection with proper fallback
         local selectedSound = CT.settings.recordSound
-        local soundID = 6227 -- Default fallback
+        local soundID = CT.sounds[1].soundID -- Default to first sound as fallback
         
         for _, sound in ipairs(CT.sounds) do
             if sound.value == selectedSound then
@@ -256,7 +272,7 @@ function CT:CreateConfigPanel()
     return frame
 end
 
--- Set up tooltip functionality
+-- Set up tooltip functionality - improved with error checking and case management
 function CT:SetupTooltips()
     GameTooltip:HookScript("OnTooltipSetSpell", function(tooltip)
         if not CT.settings.enabled then return end
@@ -270,10 +286,10 @@ function CT:SetupTooltips()
         local found = false
         
         -- Special handling for "Shoot" ability (wand)
-        if spellName == "Shoot" then
+        if string.lower(spellName) == "shoot" then
             if CT.highestCrits.wand.value > 0 then
                 tooltip:AddLine(" ")
-                tooltip:AddLine("|cffff8800CritTracker|r ")
+                tooltip:AddLine("|cffff8800[CritTracker]|r ")
                 found = true
                 
                 local record = CT.highestCrits.wand
@@ -281,25 +297,27 @@ function CT:SetupTooltips()
                 tooltip:AddLine("Highest crit: |cffff0000" .. record.value .. "|r " .. timeAgo)
             end
         else
-            -- Check regular spell categories
+            -- Simplified category checking with a single loop
             local categories = {
-                {name = "spells", label = "Spell"},
-                {name = "abilities", label = "Ability"},
-                {name = "heals", label = "Heal"}
+                {name = self.CATEGORIES.SPELLS, label = "Spell"},
+                {name = self.CATEGORIES.ABILITIES, label = "Ability"},
+                {name = self.CATEGORIES.HEALS, label = "Heal"}
             }
             
             for _, category in ipairs(categories) do
-                -- Make the lookup case-insensitive to catch more potential matches
-                for storedSpellName, data in pairs(CT.highestCrits[category.name]) do
-                    if string.lower(storedSpellName) == string.lower(spellName) and data.value > 0 then
-                        if not found then
-                            tooltip:AddLine(" ")
-                            tooltip:AddLine("|cffff8800CritTracker|r ")
-                            found = true
+                local records = self.highestCrits[category.name]
+                if records then -- Added nil check for safety
+                    for storedSpellName, data in pairs(records) do
+                        if string.lower(storedSpellName) == string.lower(spellName) and data.value > 0 then
+                            if not found then
+                                tooltip:AddLine(" ")
+                                tooltip:AddLine("|cffff8800[CritTracker]|r ")
+                                found = true
+                            end
+                            
+                            local timeAgo = CT:FormatTimeAgo(data.timestamp)
+                            tooltip:AddLine("Highest crit: |cffff0000" .. data.value .. "|r " .. timeAgo)
                         end
-                        
-                        local timeAgo = CT:FormatTimeAgo(data.timestamp)
-                        tooltip:AddLine("Highest crit: |cffff0000" .. data.value .. "|r " .. timeAgo)
                     end
                 end
             end
@@ -311,9 +329,9 @@ function CT:SetupTooltips()
     end)
 end
 
--- Format time ago
+-- Format time ago - more readable
 function CT:FormatTimeAgo(timestamp)
-    if timestamp == 0 then return "" end
+    if not timestamp or timestamp == 0 then return "" end
     
     local now = time()
     local diff = now - timestamp
@@ -322,7 +340,7 @@ function CT:FormatTimeAgo(timestamp)
         return "(just now)"
     elseif diff < 3600 then
         return string.format("(%d min ago)", math.floor(diff / 60))
-	elseif diff < 7200 then
+    elseif diff < 7200 then
         return "(1 hour ago)"
     elseif diff < 86400 then
         return string.format("(%d hours ago)", math.floor(diff / 3600))
@@ -348,7 +366,7 @@ function CT:ToggleSetting(settingName, displayName, value)
     end
 end
 
--- Handle slash commands - simplified version
+-- Handle slash commands - refactored for clarity
 function CT:HandleCommand(msg)
     local args = {}
     for arg in string.gmatch(string.lower(msg or ""), "%S+") do
@@ -357,43 +375,55 @@ function CT:HandleCommand(msg)
     
     local command = args[1] or "config"
     
-    if command == "help" then
-        self:Print("|cffff8800[CritTracker]|r Commands:")
-        self:Print("/ct - Open configuration panel")
-        self:Print("/ct help - Show this help")
-        self:Print("/ct toggle - Quickly enable/disable tracking")
-        self:Print("/ct report [all/spell/ability/heal/melee/wand] - Show highest crits")
-        self:Print("/ct reset - Reset all records (with confirmation)")
-    elseif command == "toggle" then
-        self.settings.enabled = not self.settings.enabled
-        self:Print("Tracking " .. (self.settings.enabled and "enabled" or "disabled") .. ".")
-    elseif command == "report" then
-        local category = args[2] or "all"
-        self:ShowHighestCrits(category)
-    elseif command == "reset" then
-        -- Always show confirmation dialog
-        StaticPopup_Show("CRITTRACKER_RESET_CONFIRM")
-    else
-        -- Default action: open config panel (if no command or unknown command)
-        -- Create the config panel if it doesn't exist
-        if not self.configFrame then
-            self:CreateConfigPanel()
-        end
+    -- Command dispatch table for cleaner code
+    local commandHandlers = {
+        help = function()
+            self:Print("|cffff8800[CritTracker]|r Commands:")
+            self:Print("/ct - Open configuration panel")
+            self:Print("/ct help - Show this help")
+            self:Print("/ct toggle - Quickly enable/disable tracking")
+            self:Print("/ct report [all/spell/ability/heal/melee/wand] - Show highest crits")
+            self:Print("/ct reset - Reset all records (with confirmation)")
+        end,
         
-        -- Show panel if not visible
-        if not self.configFrame:IsVisible() then
-            -- Hide any other instances that might exist
-            if CritTrackerConfigFrame and CritTrackerConfigFrame ~= self.configFrame then
-                CritTrackerConfigFrame:Hide()
+        toggle = function()
+            self.settings.enabled = not self.settings.enabled
+            self:Print("Tracking " .. (self.settings.enabled and "enabled" or "disabled") .. ".")
+        end,
+        
+        report = function()
+            local category = args[2] or "all"
+            self:ShowHighestCrits(category)
+        end,
+        
+        reset = function()
+            StaticPopup_Show("CRITTRACKER_RESET_CONFIRM")
+        end,
+        
+        -- Default action opens config panel
+        config = function()
+            if not self.configFrame then
+                self:CreateConfigPanel()
             end
-            self.configFrame:Show()
-        else
-            self.configFrame:Hide()
+            
+            if not self.configFrame:IsVisible() then
+                -- Hide any other instances that might exist
+                if CritTrackerConfigFrame and CritTrackerConfigFrame ~= self.configFrame then
+                    CritTrackerConfigFrame:Hide()
+                end
+                self.configFrame:Show()
+            else
+                self.configFrame:Hide()
+            end
         end
-    end
+    }
+    
+    -- Execute the appropriate handler or default to config
+    local handler = commandHandlers[command] or commandHandlers.config
+    handler()
 end
 
--- Reset records
+-- Reset records - with proper error checking
 function CT:ResetRecords(category)
     if category == "all" then
         -- Reset all categories
@@ -425,8 +455,10 @@ function CT:ResetRecords(category)
     end
 end
 
--- Helper function for ShowHighestCrits
-function CT:DisplayCritList(items, label)
+-- Helper function for ShowHighestCrits - optimized for top-N selection
+function CT:DisplayCritList(items, label, displayCount)
+    displayCount = displayCount or 10 -- Default to top 10
+    
     self:Print("|cffff8800[CritTracker]|r Highest " .. label .. " Critical Hits:|r")
     
     if #items == 0 then
@@ -434,19 +466,19 @@ function CT:DisplayCritList(items, label)
         return
     end
     
-    -- Sort by value, highest first
+    -- Sort by value, highest first - only once
     table.sort(items, function(a, b) return a.value > b.value end)
     
     -- Display top items
-    for i, item in ipairs(items) do
-        if i <= 10 then -- Show top 10
-            local timeAgo = self:FormatTimeAgo(item.timestamp)
-            self:Print("  " .. item.name .. ": " .. item.value .. " " .. timeAgo)
-        end
+    local displayedCount = math.min(displayCount, #items)
+    for i = 1, displayedCount do
+        local item = items[i]
+        local timeAgo = self:FormatTimeAgo(item.timestamp)
+        self:Print("  " .. item.name .. ": " .. item.value .. " " .. timeAgo)
     end
     
-    if #items > 10 then
-        self:Print("  ... and " .. (#items - 10) .. " more " .. label:lower() .. "s")
+    if #items > displayCount then
+        self:Print("  ... and " .. (#items - displayCount) .. " more " .. label:lower() .. "s")
     end
 end
 
@@ -460,29 +492,35 @@ function CT:GetSoundByValue(value)
     return self.sounds[1]  -- Return default if not found
 end
 
--- Show highest crits - with helper function to reduce duplicate code
+-- Show highest crits - optimized with error checking
 function CT:ShowHighestCrits(category)
     -- For list display categories (spells, abilities, heals)
     if category == "all" or category == "spell" then
         local spells = {}
-        for spellName, data in pairs(self.highestCrits.spells) do
-            table.insert(spells, {name = spellName, value = data.value, timestamp = data.timestamp})
+        if self.highestCrits.spells then
+            for spellName, data in pairs(self.highestCrits.spells) do
+                table.insert(spells, {name = spellName, value = data.value, timestamp = data.timestamp})
+            end
         end
         self:DisplayCritList(spells, "Spell")
     end
     
     if category == "all" or category == "ability" then
         local abilities = {}
-        for abilityName, data in pairs(self.highestCrits.abilities) do
-            table.insert(abilities, {name = abilityName, value = data.value, timestamp = data.timestamp})
+        if self.highestCrits.abilities then
+            for abilityName, data in pairs(self.highestCrits.abilities) do
+                table.insert(abilities, {name = abilityName, value = data.value, timestamp = data.timestamp})
+            end
         end
         self:DisplayCritList(abilities, "Ability")
     end
     
     if category == "all" or category == "heal" then
         local heals = {}
-        for healName, data in pairs(self.highestCrits.heals) do
-            table.insert(heals, {name = healName, value = data.value, timestamp = data.timestamp})
+        if self.highestCrits.heals then
+            for healName, data in pairs(self.highestCrits.heals) do
+                table.insert(heals, {name = healName, value = data.value, timestamp = data.timestamp})
+            end
         end
         self:DisplayCritList(heals, "Healing")
     end
@@ -490,7 +528,7 @@ function CT:ShowHighestCrits(category)
     -- For single record categories (melee, wand)
     if category == "all" or category == "melee" then
         self:Print("|cffff8800[CritTracker]|r Highest Melee Critical Hit:")
-        if self.highestCrits.melee.value > 0 then
+        if self.highestCrits.melee and self.highestCrits.melee.value > 0 then
             local timeAgo = self:FormatTimeAgo(self.highestCrits.melee.timestamp)
             self:Print("  Melee Attack: " .. self.highestCrits.melee.value .. " " .. timeAgo)
         else
@@ -500,7 +538,7 @@ function CT:ShowHighestCrits(category)
     
     if category == "all" or category == "wand" then
         self:Print("|cffff8800[CritTracker]|r Highest Wand Critical Hit:")
-        if self.highestCrits.wand.value > 0 then
+        if self.highestCrits.wand and self.highestCrits.wand.value > 0 then
             local timeAgo = self:FormatTimeAgo(self.highestCrits.wand.timestamp)
             self:Print("  Wand Shot: " .. self.highestCrits.wand.value .. " " .. timeAgo)
         else
@@ -509,64 +547,92 @@ function CT:ShowHighestCrits(category)
     end
 end
 
--- Process combat log
+-- Process combat log - optimized with cached player GUID
 function CT:ProcessCombatLog()
     if not self.settings.enabled then return end
     
     -- Get combat log info using CombatLogGetCurrentEventInfo() for Classic
     local timestamp, event, _, sourceGUID = CombatLogGetCurrentEventInfo()
     
-    -- Only track player's actions
-    if sourceGUID ~= UnitGUID("player") then return end
+    -- Only track player's actions - use cached GUID for performance
+    if sourceGUID ~= self.playerGUID then return end
     
-    -- Handle different event types
-    if event == "SWING_DAMAGE" then
-        local amount, overkill, school, resisted, blocked, absorbed, critical = select(12, CombatLogGetCurrentEventInfo())
-        
-        if critical then
-            self:RecordCrit("melee", "Melee Attack", amount)
-        end
-    elseif event == "RANGE_DAMAGE" then
-        local spellId, spellName, spellSchool, amount, overkill, school, resisted, blocked, absorbed, critical = select(12, CombatLogGetCurrentEventInfo())
-        
-        if critical then
-            self:RecordCrit("wand", spellName or "Wand Shot", amount)
-        end
-    elseif event == "SPELL_DAMAGE" or event == "SPELL_PERIODIC_DAMAGE" then
-        local spellId, spellName, spellSchool, amount, overkill, school, resisted, blocked, absorbed, critical = select(12, CombatLogGetCurrentEventInfo())
-        
-        if critical and spellName then
-            -- Use helper function to clean spell name
-            spellName = self:CleanSpellName(spellName)
+    -- Event dispatch table for cleaner code
+    local eventHandlers = {
+        SWING_DAMAGE = function()
+            local amount, overkill, school, resisted, blocked, absorbed, critical = select(12, CombatLogGetCurrentEventInfo())
             
-            -- In Classic, physical abilities have spellSchool = 1
-            local category = (spellSchool == 1) and "abilities" or "spells"
-            self:RecordCrit(category, spellName, amount)
-        end
-    elseif event == "SPELL_HEAL" or event == "SPELL_PERIODIC_HEAL" then
-        local spellId, spellName, spellSchool, amount, overhealing, absorbed, critical = select(12, CombatLogGetCurrentEventInfo())
+            if critical then
+                self:RecordCrit(self.CATEGORIES.MELEE, "Melee Attack", amount)
+            end
+        end,
         
-        if critical and spellName then
-            -- Use helper function to clean spell name
-            spellName = self:CleanSpellName(spellName)
+        RANGE_DAMAGE = function()
+            local spellId, spellName, spellSchool, amount, overkill, school, resisted, blocked, absorbed, critical = select(12, CombatLogGetCurrentEventInfo())
             
-            self:RecordCrit("heals", spellName, amount)
+            if critical then
+                self:RecordCrit(self.CATEGORIES.WAND, spellName or "Wand Shot", amount)
+            end
+        end,
+        
+        SPELL_DAMAGE = function()
+            local spellId, spellName, spellSchool, amount, overkill, school, resisted, blocked, absorbed, critical = select(12, CombatLogGetCurrentEventInfo())
+            
+            if critical and spellName then
+                -- Use helper function to clean spell name
+                spellName = self:CleanSpellName(spellName)
+                
+                -- In Classic, physical abilities have spellSchool = 1
+                local category = (spellSchool == 1) and self.CATEGORIES.ABILITIES or self.CATEGORIES.SPELLS
+                self:RecordCrit(category, spellName, amount)
+            end
+        end,
+        
+        SPELL_PERIODIC_DAMAGE = function()
+            -- Same handling as SPELL_DAMAGE
+            eventHandlers.SPELL_DAMAGE()
+        end,
+        
+        SPELL_HEAL = function()
+            local spellId, spellName, spellSchool, amount, overhealing, absorbed, critical = select(12, CombatLogGetCurrentEventInfo())
+            
+            if critical and spellName then
+                -- Use helper function to clean spell name
+                spellName = self:CleanSpellName(spellName)
+                
+                self:RecordCrit(self.CATEGORIES.HEALS, spellName, amount)
+            end
+        end,
+        
+        SPELL_PERIODIC_HEAL = function()
+            -- Same handling as SPELL_HEAL
+            eventHandlers.SPELL_HEAL()
         end
+    }
+    
+    -- Handle the event if we have a handler for it
+    local handler = eventHandlers[event]
+    if handler then
+        handler()
     end
 end
 
--- Record critical hit
+-- Record critical hit - with better error handling and organization
 function CT:RecordCrit(category, name, amount)
     local record = nil
     local isNewRecord = false
     local oldValue = 0
     
     -- Handle special cases for melee and wand which are single records
-    if category == "melee" or category == "wand" then
+    if category == self.CATEGORIES.MELEE or category == self.CATEGORIES.WAND then
         record = self.highestCrits[category]
     else
         -- For spells, abilities, and heals
         -- Initialize if this spell hasn't been recorded before
+        if not self.highestCrits[category] then
+            self.highestCrits[category] = {}
+        end
+        
         if not self.highestCrits[category][name] then
             self.highestCrits[category][name] = {value = 0, timestamp = 0}
         end
@@ -584,50 +650,49 @@ function CT:RecordCrit(category, name, amount)
     -- Notify player of new record
     if isNewRecord then
         local categoryLabel = category
-        if category == "spells" then categoryLabel = "SPELL"
-        elseif category == "abilities" then categoryLabel = "ABILITY"
-        elseif category == "heals" then categoryLabel = "HEAL"
-        elseif category == "melee" then categoryLabel = "MELEE"
-        elseif category == "wand" then categoryLabel = "WAND"
+        if category == self.CATEGORIES.SPELLS then categoryLabel = "SPELL"
+        elseif category == self.CATEGORIES.ABILITIES then categoryLabel = "ABILITY"
+        elseif category == self.CATEGORIES.HEALS then categoryLabel = "HEAL"
+        elseif category == self.CATEGORIES.MELEE then categoryLabel = "MELEE"
+        elseif category == self.CATEGORIES.WAND then categoryLabel = "WAND"
         end
         
         -- Format local message
         local message
         if oldValue == 0 then
-            message = string.format("|cff008800[CritTracker]|r New |cFF00CCFF%s|r crit record: |cffA335EE%s|r hit for: |cffff0000%d|r", categoryLabel, name, amount)
+            message = string.format("|cffff8800[CritTracker]|r New |cFF00CCFF%s|r crit record: |cffA335EE%s|r hit for: |cffff0000%d|r", categoryLabel, name, amount)
         else
             message = string.format("|cffff8800[CritTracker]|r New |cFF00CCFF%s|r crit record: |cffA335EE%s|r hit for: |cffff0000%d|r (prev: %d)", categoryLabel, name, amount, oldValue)
         end
         
         -- Show message to player
         self:Print(message)
-		
-		-- Set up message with no colors for party/raid announce
-        local socialmessage
-		 -- Format socialmessage
-  
+        
+        -- Set up message with no colors for party/raid announce
+        local socialMessage
+        -- Format socialMessage
         if oldValue == 0 then
-            socialmessage = string.format("[CritTracker] New %s crit record! %s hit for: %d", categoryLabel, name, amount)
+            socialMessage = string.format("[CritTracker] New %s crit record! %s hit for: %d", categoryLabel, name, amount)
         else
-            socialmessage = string.format("[CritTracker] New %s crit record! %s hit for: %d (prev: %d)", categoryLabel, name, amount, oldValue)
-        end
-        -- Announce to party/raid if appropriate
-        if IsInRaid() and self.settings.announceRaid then
-            SendChatMessage(socialmessage, "RAID")
-        elseif IsInGroup() and not IsInRaid() and self.settings.announceParty then
-            SendChatMessage(socialmessage, "PARTY")
+            socialMessage = string.format("[CritTracker] New %s crit record! %s hit for: %d (prev: %d)", categoryLabel, name, amount, oldValue)
         end
         
-        -- Play sound if enabled
-        if self.settings.playSoundOnRecord then
-            local soundID = 6227 -- Default fallback
-            for _, sound in ipairs(self.sounds) do
-                if sound.value == self.settings.recordSound then
-                    soundID = sound.soundID
-                    break
-                end
+        -- Announce to party/raid if appropriate - with rate limiting
+        local currentTime = GetTime()
+        if not self.lastAnnounceTime or (currentTime - self.lastAnnounceTime) > 1 then
+            if IsInRaid() and self.settings.announceRaid then
+                SendChatMessage(socialMessage, "RAID")
+                self.lastAnnounceTime = currentTime
+            elseif IsInGroup() and not IsInRaid() and self.settings.announceParty then
+                SendChatMessage(socialMessage, "PARTY")
+                self.lastAnnounceTime = currentTime
             end
-            PlaySound(soundID)
+        end
+        
+        -- Play sound if enabled - with better error handling
+        if self.settings.playSoundOnRecord then
+            local sound = self:GetSoundByValue(self.settings.recordSound)
+            PlaySound(sound.soundID)
         end
     end
 end
@@ -640,17 +705,29 @@ function CT:SaveData()
     }
 end
 
--- Consolidated event handler
-frame:SetScript("OnEvent", function(self, event, ...)
-    if event == "ADDON_LOADED" then
-        local addonName = ...
+-- Event handlers table for cleaner organization
+local eventHandlers = {
+    ADDON_LOADED = function(addonName)
         CT:Init(addonName)
-    elseif event == "COMBAT_LOG_EVENT_UNFILTERED" then
+    end,
+    
+    COMBAT_LOG_EVENT_UNFILTERED = function()
         CT:ProcessCombatLog()
-    elseif event == "PLAYER_LOGIN" then
-        -- Welcome message when entering world or after /reload
+    end,
+    
+    PLAYER_LOGIN = function()
         CT:ShowWelcomeMessage()
-    elseif event == "PLAYER_LOGOUT" then
+    end,
+    
+    PLAYER_LOGOUT = function()
         CT:SaveData()
+    end
+}
+
+-- Consolidated event handler with dispatcher
+frame:SetScript("OnEvent", function(self, event, ...)
+    local handler = eventHandlers[event]
+    if handler then
+        handler(...)
     end
 end)
