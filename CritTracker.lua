@@ -366,7 +366,7 @@ function CT:ToggleSetting(settingName, displayName, value)
     end
 end
 
--- Handle slash commands - refactored for clarity
+-- Handle slash commands - update for report panel
 function CT:HandleCommand(msg)
     local args = {}
     for arg in string.gmatch(string.lower(msg or ""), "%S+") do
@@ -382,7 +382,7 @@ function CT:HandleCommand(msg)
             self:Print("/ct - Open configuration panel")
             self:Print("/ct help - Show this help")
             self:Print("/ct toggle - Quickly enable/disable tracking")
-            self:Print("/ct report [all/spell/ability/heal/melee/wand] - Show highest crits")
+            self:Print("/ct report [all/spell/ability/heal/physical] - Show highest crits")
             self:Print("/ct reset - Reset all records (with confirmation)")
         end,
         
@@ -393,7 +393,48 @@ function CT:HandleCommand(msg)
         
         report = function()
             local category = args[2] or "all"
-            self:ShowHighestCrits(category)
+            
+            -- Validate the category
+            local validCategories = {
+                ["all"] = true,
+                ["spell"] = true,
+                ["ability"] = true,
+                ["heal"] = true,
+                ["physical"] = true,
+                ["melee"] = "physical", -- Map melee to physical category
+                ["wand"] = "physical"   -- Map wand to physical category
+            }
+            
+            -- Check if category is valid, otherwise default to "all"
+            if not validCategories[category] then
+                self:Print("Invalid category: '" .. category .. "'. Using 'all' instead.")
+                category = "all"
+            elseif type(validCategories[category]) == "string" then
+                -- If the category maps to another one, use that
+                category = validCategories[category]
+            end
+            
+            -- Create and show the report panel
+            if not self.reportFrame then
+                self:CreateReportPanel(category)
+            else
+                -- If already created, just update and show it
+                if not self.reportFrame:IsShown() then
+                    self.reportFrame:Show()
+                end
+                
+                -- Update content and highlight the proper category button
+                self:UpdateReportPanelContent(self.reportFrame.scrollContent, category)
+                
+                -- Highlight the selected category button
+                for _, button in ipairs(self.reportFrame.categoryButtons) do
+                    if button.value == category then
+                        button:LockHighlight()
+                    else
+                        button:UnlockHighlight()
+                    end
+                end
+            end
         end,
         
         reset = function()
@@ -695,6 +736,275 @@ function CT:RecordCrit(category, name, amount)
             PlaySound(sound.soundID)
         end
     end
+end
+
+-- Create a report panel for displaying crit records
+function CT:CreateReportPanel(category)
+    -- Clean up any existing frames with the same name
+    if _G["CritTrackerReportFrame"] then
+        _G["CritTrackerReportFrame"]:Hide()
+        _G["CritTrackerReportFrame"] = nil
+    end
+    
+    -- Create the main frame
+    local frameName = "CritTrackerReportFrame"
+    local frame = CreateFrame("Frame", frameName, UIParent, "BasicFrameTemplateWithInset")
+    
+    -- Close frame when Escape key is pressed
+    table.insert(UISpecialFrames, frameName)
+    
+    frame:SetSize(400, 500)
+    frame:SetPoint("CENTER")
+    frame:EnableMouse(true)
+    frame:SetMovable(true)
+    frame:RegisterForDrag("LeftButton")
+    frame:SetScript("OnDragStart", frame.StartMoving)
+    frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
+    frame:SetClampedToScreen(true)
+    
+    -- Setup frame title
+    frame.title = frame:CreateFontString(nil, "OVERLAY")
+    frame.title:SetFontObject("GameFontHighlight")
+    frame.title:SetPoint("CENTER", frame.TitleBg, "CENTER", 0, 0)
+    frame.title:SetText("CritTracker Records")
+    
+    -- Create category buttons at the top
+    local buttonWidth = 70
+    local buttonSpacing = 5
+    local totalWidth = (buttonWidth * 5) + (buttonSpacing * 4)
+    local startX = (frame:GetWidth() - totalWidth) / 2
+    
+    local categories = {
+        {text = "All", value = "all"},
+        {text = "Spells", value = "spell"},
+        {text = "Abilities", value = "ability"},
+        {text = "Healing", value = "heal"},
+        {text = "Physical", value = "physical"} -- Combines melee and wand
+    }
+    
+    frame.categoryButtons = {}
+    
+    for i, cat in ipairs(categories) do
+        local button = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+        button:SetSize(buttonWidth, 22)
+        button:SetPoint("TOPLEFT", frame, "TOPLEFT", startX + ((i-1) * (buttonWidth + buttonSpacing)), -30)
+        button:SetText(cat.text)
+        button.value = cat.value
+        
+        button:SetScript("OnClick", function()
+            -- Highlight the selected button and unhighlight others
+            for _, btn in ipairs(frame.categoryButtons) do
+                if btn == button then
+                    btn:LockHighlight()
+                else
+                    btn:UnlockHighlight()
+                end
+            end
+            
+            -- Update the displayed data
+            self:UpdateReportPanelContent(frame.scrollContent, cat.value)
+        end)
+        
+        table.insert(frame.categoryButtons, button)
+    end
+    
+    -- Highlight the default/selected category
+    for _, button in ipairs(frame.categoryButtons) do
+        if button.value == (category or "all") then
+            button:LockHighlight()
+        end
+    end
+    
+    -- Create a scrolling content frame
+    local scrollFrame = CreateFrame("ScrollFrame", nil, frame, "UIPanelScrollFrameTemplate")
+    scrollFrame:SetPoint("TOPLEFT", 12, -60)
+    scrollFrame:SetPoint("BOTTOMRIGHT", -30, 10)
+    
+    local content = CreateFrame("Frame", nil, scrollFrame)
+    content:SetSize(scrollFrame:GetWidth(), 1) -- Height will be set dynamically
+    scrollFrame:SetScrollChild(content)
+    
+    -- Store references
+    frame.scrollFrame = scrollFrame
+    frame.scrollContent = content
+    
+    -- Display crit information in the panel
+    self:UpdateReportPanelContent(content, category or "all")
+    
+    -- Make sure the close button actually works
+    frame.CloseButton:SetScript("OnClick", function()
+        frame:Hide()
+    end)
+    
+    -- Save frame reference and return
+    self.reportFrame = frame
+    return frame
+end
+
+-- Display crit information in the report panel
+function CT:UpdateReportPanelContent(contentFrame, category)
+    -- Clear existing content
+    for _, child in pairs({contentFrame:GetChildren()}) do
+        child:Hide()
+        child:SetParent(nil)
+    end
+    for _, region in pairs({contentFrame:GetRegions()}) do
+        region:Hide()
+        region:SetParent(nil)
+    end
+    
+    local y = 5
+    local lineHeight = 20
+    
+    -- Helper function to add a text line
+    local function AddHeader(text)
+        local header = contentFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+        header:SetPoint("TOPLEFT", contentFrame, "TOPLEFT", 5, -y)
+        header:SetPoint("TOPRIGHT", contentFrame, "TOPRIGHT", -5, -y)
+        header:SetJustifyH("LEFT")
+        header:SetText("|cffff8800" .. text .. "|r")
+        y = y + lineHeight + 5
+        return header
+    end
+    
+    local function AddNoneRecorded(indent)
+        local line = contentFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        line:SetPoint("TOPLEFT", contentFrame, "TOPLEFT", indent or 15, -y)
+        line:SetText("None recorded")
+        y = y + lineHeight
+        return line
+    end
+    
+	local function CreateRecordLine(parent, recordName, recordValue, recordTime)
+		local frame = CreateFrame("Frame", nil, parent)
+		frame:SetSize(parent:GetWidth() - 20, lineHeight)
+		frame:SetPoint("TOPLEFT", parent, "TOPLEFT", 15, -y)
+		
+		-- Name text - reduce width to give more space to other elements
+		local nameText = frame:CreateFontString(nil, "OVERLAY", "GameFontWhite")
+		nameText:SetPoint("LEFT", frame, "LEFT", 0, 0)
+		nameText:SetWidth(180) -- Reduced from 240
+		nameText:SetJustifyH("LEFT")
+		nameText:SetText(recordName)
+		
+		-- Value text - position closer to the name
+		local valueText = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+		valueText:SetPoint("LEFT", nameText, "RIGHT", 5, 0)
+		valueText:SetWidth(60) -- Adjusted width
+		valueText:SetJustifyH("RIGHT")
+		valueText:SetText("|cffFF4500" .. recordValue .. "|r")
+		
+		-- Time text - position relative to value
+		local timeText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+		timeText:SetPoint("LEFT", valueText, "RIGHT", 5, 0)
+		timeText:SetWidth(80)
+		timeText:SetJustifyH("LEFT") -- Changed from RIGHT to LEFT
+		timeText:SetText("|cff888888" .. recordTime .. "|r")
+		
+		y = y + lineHeight
+		return frame
+	end
+    
+    -- Helper to display a category of crits
+    local function DisplayCategory(catName, records, label)
+        AddHeader(label)
+        
+        if not records or #records == 0 then
+            AddNoneRecorded()
+            y = y + 10
+            return
+        end
+        
+        -- Sort by value, highest first
+        table.sort(records, function(a, b) return a.value > b.value end)
+        
+        -- Display top items
+        local displayCount = math.min(25, #records)
+        for i = 1, displayCount do
+            local record = records[i]
+            local timeAgo = self:FormatTimeAgo(record.timestamp)
+            CreateRecordLine(contentFrame, record.name, record.value, timeAgo)
+        end
+        
+        if #records > displayCount then
+            local moreText = contentFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            moreText:SetPoint("TOPLEFT", contentFrame, "TOPLEFT", 15, -y)
+            moreText:SetText("|cff888888... and " .. (#records - displayCount) .. " more " .. catName:lower() .. "s|r")
+            y = y + lineHeight
+        end
+        
+        y = y + 15
+    end
+    
+    -- Process each category based on selection
+    if category == "all" or category == "spell" then
+        local spells = {}
+        if self.highestCrits.spells then
+            for spellName, data in pairs(self.highestCrits.spells) do
+                if data.value > 0 then -- Only include records with values
+                    table.insert(spells, {name = spellName, value = data.value, timestamp = data.timestamp})
+                end
+            end
+        end
+        DisplayCategory("Spell", spells, "Spell Critical Hits")
+    end
+    
+    if category == "all" or category == "ability" then
+        local abilities = {}
+        if self.highestCrits.abilities then
+            for abilityName, data in pairs(self.highestCrits.abilities) do
+                if data.value > 0 then -- Only include records with values
+                    table.insert(abilities, {name = abilityName, value = data.value, timestamp = data.timestamp})
+                end
+            end
+        end
+        DisplayCategory("Ability", abilities, "Ability Critical Hits")
+    end
+    
+    if category == "all" or category == "heal" then
+        local heals = {}
+        if self.highestCrits.heals then
+            for healName, data in pairs(self.highestCrits.heals) do
+                if data.value > 0 then -- Only include records with values
+                    table.insert(heals, {name = healName, value = data.value, timestamp = data.timestamp})
+                end
+            end
+        end
+        DisplayCategory("Healing", heals, "Healing Critical Hits")
+    end
+    
+    if category == "all" or category == "physical" then
+        AddHeader("Physical Critical Hits")
+        
+        -- Display melee crit if available
+        if self.highestCrits.melee and self.highestCrits.melee.value > 0 then
+            local timeAgo = self:FormatTimeAgo(self.highestCrits.melee.timestamp)
+            CreateRecordLine(contentFrame, "Melee Attack", self.highestCrits.melee.value, timeAgo)
+        else
+            -- No melee records
+            local noMeleeText = contentFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            noMeleeText:SetPoint("TOPLEFT", contentFrame, "TOPLEFT", 15, -y)
+            noMeleeText:SetText("No melee crits recorded")
+            y = y + lineHeight
+        end
+        
+        -- Display wand crit if available
+        if self.highestCrits.wand and self.highestCrits.wand.value > 0 then
+            local timeAgo = self:FormatTimeAgo(self.highestCrits.wand.timestamp)
+            CreateRecordLine(contentFrame, "Wand Shot", self.highestCrits.wand.value, timeAgo)
+        else
+            -- No wand records
+            local noWandText = contentFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            noWandText:SetPoint("TOPLEFT", contentFrame, "TOPLEFT", 15, -y)
+            noWandText:SetText("No wand crits recorded")
+            y = y + lineHeight
+        end
+        
+        y = y + 15
+    end
+    
+    -- Set content height
+    contentFrame:SetHeight(y + 20)
 end
 
 -- Save data between sessions
