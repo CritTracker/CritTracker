@@ -750,17 +750,21 @@ function CT:RecordCrit(category, name, amount)
         
 		-- Play sound if enabled - with safer error handling
 		if isNewRecord and self.settings.playSoundOnRecord then
-			-- Use pcall to prevent errors from crashing the addon
+		-- Use pcall to prevent errors from crashing the addon
 			local success, err = pcall(function()
 				if self.settings.recordSound then
-					-- Classic WoW uses numeric sound IDs
-					PlaySoundFile(self.settings.recordSound)
+					-- Get the sound object using the helper function
+					local sound = self:GetSoundByValue(self.settings.recordSound)
+					-- Play the sound using the soundID
+					if sound and sound.soundID then
+						PlaySound(sound.soundID)
+					end
 				end
 			end)
 			
 			-- If sound failed to play, don't throw an error
 			if not success then
-				-- Optionally log the issue to chat frame 1 (default chat)
+				-- Log the issue to chat frame 1 (default chat)
 				DEFAULT_CHAT_FRAME:AddMessage("|cffff8800[CritTracker]|r Could not play sound.")
 			end
 		end
