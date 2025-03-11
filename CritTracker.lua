@@ -83,6 +83,9 @@ function CT:Init(addonName)
     -- Cache player GUID for performance
     self.playerGUID = UnitGUID("player")
     
+	-- Initialize lookup table for tooltips
+    self.spellLookup = {}
+	
     -- Load saved variables
     if CritTrackerDB then
         -- Copy saved settings
@@ -104,6 +107,9 @@ function CT:Init(addonName)
         end
     end
     
+	-- Build the spell lookup table after loading data
+    self:RebuildSpellLookup()
+	
     -- Register slash commands
     SLASH_CRITTRACKER1 = "/ct"
     SLASH_CRITTRACKER2 = "/crittracker"
@@ -114,6 +120,54 @@ function CT:Init(addonName)
     
     -- Initial welcome message (shown only on first load, not reload)
     self.initialized = true
+end
+
+-- Build the tooltip lookup table
+function CT:RebuildSpellLookup()
+    wipe(self.spellLookup or {})
+    self.spellLookup = {}
+    
+    -- Add spells
+    for spellName, data in pairs(self.highestCrits.spells) do
+        if data.value > 0 then
+            self.spellLookup[string.lower(spellName)] = {
+                category = self.CATEGORIES.SPELLS,
+                data = data,
+                name = spellName
+            }
+        end
+    end
+    
+    -- Add abilities
+    for abilityName, data in pairs(self.highestCrits.abilities) do
+        if data.value > 0 then
+            self.spellLookup[string.lower(abilityName)] = {
+                category = self.CATEGORIES.ABILITIES,
+                data = data, 
+                name = abilityName
+            }
+        end
+    end
+    
+    -- Add heals
+    for healName, data in pairs(self.highestCrits.heals) do
+        if data.value > 0 then
+            self.spellLookup[string.lower(healName)] = {
+                category = self.CATEGORIES.HEALS,
+                data = data,
+                name = healName
+            }
+        end
+    end
+    
+    -- Add wand special case
+    if self.highestCrits.wand.value > 0 then
+        self.spellLookup["shoot"] = {
+            category = "wand",
+            data = self.highestCrits.wand,
+            name = "Wand Shot"
+        }
+    end
 end
 
 -- Update the player login message
@@ -283,47 +337,16 @@ function CT:SetupTooltips()
         -- Use the helper function to clean spell name 
         spellName = self:CleanSpellName(spellName)
         
-        local found = false
+               -- Use the lookup table instead of multiple loops
+        local recordInfo = self.spellLookup[string.lower(spellName)]
         
-        -- Special handling for "Shoot" ability (wand)
-        if string.lower(spellName) == "shoot" then
-            if CT.highestCrits.wand.value > 0 then
-                tooltip:AddLine(" ")
-                tooltip:AddLine("|cffff8800[CritTracker]|r ")
-                found = true
-                
-                local record = CT.highestCrits.wand
-                local timeAgo = CT:FormatTimeAgo(record.timestamp)
-                tooltip:AddLine("Highest crit: |cffff0000" .. record.value .. "|r " .. timeAgo)
-            end
-        else
-            -- Simplified category checking with a single loop
-            local categories = {
-                {name = self.CATEGORIES.SPELLS, label = "Spell"},
-                {name = self.CATEGORIES.ABILITIES, label = "Ability"},
-                {name = self.CATEGORIES.HEALS, label = "Heal"}
-            }
+        if recordInfo then
+            tooltip:AddLine(" ")
+            tooltip:AddLine("|cffff8800[CritTracker]|r ")
             
-            for _, category in ipairs(categories) do
-                local records = self.highestCrits[category.name]
-                if records then -- Added nil check for safety
-                    for storedSpellName, data in pairs(records) do
-                        if string.lower(storedSpellName) == string.lower(spellName) and data.value > 0 then
-                            if not found then
-                                tooltip:AddLine(" ")
-                                tooltip:AddLine("|cffff8800[CritTracker]|r ")
-                                found = true
-                            end
-                            
-                            local timeAgo = CT:FormatTimeAgo(data.timestamp)
-                            tooltip:AddLine("Highest crit: |cffff0000" .. data.value .. "|r " .. timeAgo)
-                        end
-                    end
-                end
-            end
-        end
-        
-        if found then
+            local timeAgo = CT:FormatTimeAgo(recordInfo.data.timestamp)
+            tooltip:AddLine("Highest crit: |cffff0000" .. recordInfo.data.value .. "|r " .. timeAgo)
+            
             tooltip:Show()
         end
     end)
@@ -588,73 +611,58 @@ function CT:ShowHighestCrits(category)
     end
 end
 
--- Process combat log - optimized with cached player GUID
+-- Process combat log
 function CT:ProcessCombatLog()
     if not self.settings.enabled then return end
     
-    -- Get combat log info using CombatLogGetCurrentEventInfo() for Classic
-    local timestamp, event, _, sourceGUID = CombatLogGetCurrentEventInfo()
+    -- Get all combat log info once and store in a local table
+    local timestamp, event, _, sourceGUID, _, _, _, 
+          destGUID, destName, _, _, 
+          param1, param2, param3, param4, param5, param6, 
+          param7, param8, param9, param10, param11, param12 = CombatLogGetCurrentEventInfo()
     
     -- Only track player's actions - use cached GUID for performance
     if sourceGUID ~= self.playerGUID then return end
     
-    -- Event dispatch table for cleaner code
-    local eventHandlers = {
-        SWING_DAMAGE = function()
-            local amount, overkill, school, resisted, blocked, absorbed, critical = select(12, CombatLogGetCurrentEventInfo())
-            
-            if critical then
-                self:RecordCrit(self.CATEGORIES.MELEE, "Melee Attack", amount)
-            end
-        end,
-        
-        RANGE_DAMAGE = function()
-            local spellId, spellName, spellSchool, amount, overkill, school, resisted, blocked, absorbed, critical = select(12, CombatLogGetCurrentEventInfo())
-            
-            if critical then
-                self:RecordCrit(self.CATEGORIES.WAND, spellName or "Wand Shot", amount)
-            end
-        end,
-        
-        SPELL_DAMAGE = function()
-            local spellId, spellName, spellSchool, amount, overkill, school, resisted, blocked, absorbed, critical = select(12, CombatLogGetCurrentEventInfo())
-            
-            if critical and spellName then
-                -- Use helper function to clean spell name
-                spellName = self:CleanSpellName(spellName)
-                
-                -- In Classic, physical abilities have spellSchool = 1
-                local category = (spellSchool == 1) and self.CATEGORIES.ABILITIES or self.CATEGORIES.SPELLS
-                self:RecordCrit(category, spellName, amount)
-            end
-        end,
-        
-        SPELL_PERIODIC_DAMAGE = function()
-            -- Same handling as SPELL_DAMAGE
-            eventHandlers.SPELL_DAMAGE()
-        end,
-        
-        SPELL_HEAL = function()
-            local spellId, spellName, spellSchool, amount, overhealing, absorbed, critical = select(12, CombatLogGetCurrentEventInfo())
-            
-            if critical and spellName then
-                -- Use helper function to clean spell name
-                spellName = self:CleanSpellName(spellName)
-                
-                self:RecordCrit(self.CATEGORIES.HEALS, spellName, amount)
-            end
-        end,
-        
-        SPELL_PERIODIC_HEAL = function()
-            -- Same handling as SPELL_HEAL
-            eventHandlers.SPELL_HEAL()
+    -- Handle specific events
+    if event == "SWING_DAMAGE" then
+        local amount, _, _, _, _, _, critical = param1, param2, param3, param4, param5, param6, param7
+        if critical then
+            self:RecordCrit(self.CATEGORIES.MELEE, "Melee Attack", amount)
         end
-    }
-    
-    -- Handle the event if we have a handler for it
-    local handler = eventHandlers[event]
-    if handler then
-        handler()
+        
+    elseif event == "RANGE_DAMAGE" then
+        local spellId, spellName, spellSchool = param1, param2, param3
+        local amount, _, _, _, _, _, critical = param4, param5, param6, param7, param8, param9, param10
+        
+        if critical then
+            self:RecordCrit(self.CATEGORIES.WAND, spellName or "Wand Shot", amount)
+        end
+        
+    elseif event == "SPELL_DAMAGE" or event == "SPELL_PERIODIC_DAMAGE" then
+        local spellId, spellName, spellSchool = param1, param2, param3
+        local amount, _, _, _, _, _, critical = param4, param5, param6, param7, param8, param9, param10
+        
+        if critical and spellName then
+            -- Use helper function to clean spell name
+            spellName = self:CleanSpellName(spellName)
+            
+            -- In Classic, physical abilities have spellSchool = 1
+            local category = (event == "SPELL_DAMAGE" and spellSchool == 1) 
+                and self.CATEGORIES.ABILITIES 
+                or self.CATEGORIES.SPELLS
+                
+            self:RecordCrit(category, spellName, amount)
+        end
+        
+    elseif event == "SPELL_HEAL" or event == "SPELL_PERIODIC_HEAL" then
+        local spellId, spellName, spellSchool = param1, param2, param3
+        local amount, _, _, critical = param4, param5, param6, param7
+        
+        if critical and spellName then
+            spellName = self:CleanSpellName(spellName)
+            self:RecordCrit(self.CATEGORIES.HEALS, spellName, amount)
+        end
     end
 end
 
@@ -686,6 +694,8 @@ function CT:RecordCrit(category, name, amount)
         record.value = amount
         record.timestamp = time()
         isNewRecord = true
+		-- Rebuild the lookup table when records change
+        self:RebuildSpellLookup()
     end
     
     -- Notify player of new record
