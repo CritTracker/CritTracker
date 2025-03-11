@@ -614,6 +614,13 @@ end
 -- Process combat log
 function CT:ProcessCombatLog()
     if not self.settings.enabled then return end
+
+-- Ensure playerGUID is available - initialize if needed
+    if not self.playerGUID then
+        self.playerGUID = UnitGUID("player")
+        -- If still nil, exit function to prevent errors
+        if not self.playerGUID then return end
+    end
     
     -- Get all combat log info once and store in a local table
     local timestamp, event, _, sourceGUID, _, _, _, 
@@ -721,6 +728,7 @@ function CT:RecordCrit(category, name, amount)
         
         -- Set up message with no colors for party/raid announce
         local socialMessage
+
         -- Format socialMessage
         if oldValue == 0 then
             socialMessage = string.format("[CritTracker] New %s crit record! %s hit for: %d", categoryLabel, name, amount)
@@ -740,11 +748,22 @@ function CT:RecordCrit(category, name, amount)
             end
         end
         
-        -- Play sound if enabled - with better error handling
-        if self.settings.playSoundOnRecord then
-            local sound = self:GetSoundByValue(self.settings.recordSound)
-            PlaySound(sound.soundID)
-        end
+		-- Play sound if enabled - with safer error handling
+		if isNewRecord and self.settings.playSoundOnRecord then
+			-- Use pcall to prevent errors from crashing the addon
+			local success, err = pcall(function()
+				if self.settings.recordSound then
+					-- Classic WoW uses numeric sound IDs
+					PlaySoundFile(self.settings.recordSound)
+				end
+			end)
+			
+			-- If sound failed to play, don't throw an error
+			if not success then
+				-- Optionally log the issue to chat frame 1 (default chat)
+				DEFAULT_CHAT_FRAME:AddMessage("|cffff8800[CritTracker]|r Could not play sound.")
+			end
+		end
     end
 end
 
