@@ -736,17 +736,73 @@ function CT:RecordCrit(category, name, amount)
             socialMessage = string.format("[CritTracker] New %s crit record! %s hit for: %d (prev: %d)", categoryLabel, name, amount, oldValue)
         end
         
-        -- Announce to party/raid if appropriate - with rate limiting
-        local currentTime = GetTime()
-        if not self.lastAnnounceTime or (currentTime - self.lastAnnounceTime) > 1 then
-            if IsInRaid() and self.settings.announceRaid then
-                SendChatMessage(socialMessage, "RAID")
-                self.lastAnnounceTime = currentTime
-            elseif IsInGroup() and not IsInRaid() and self.settings.announceParty then
-                SendChatMessage(socialMessage, "PARTY")
-                self.lastAnnounceTime = currentTime
-            end
-        end
+		-- Initialize rate limiting if it doesn't exist yet
+		if not self.lastAnnounceTime then
+			self.lastAnnounceTime = 0
+		end
+
+		-- Get the appropriate chat channel based on group status and settings
+		local function getAppropriateChannel()
+			-- Check if player is in a battleground
+			local inBattleground = false
+			for i = 1, GetNumBattlefields() do
+				local status = GetBattlefieldStatus(i)
+				if status == "active" then
+					inBattleground = true
+					break
+				end
+			end
+			
+			-- In battleground, use INSTANCE_CHAT or BATTLEGROUND, but only if raid announcements are enabled
+			if inBattleground and self.settings.announceRaid then
+				-- Try to detect if INSTANCE_CHAT is available (not in all Classic versions)
+				local channels = {GetChannelList()}
+				local hasInstanceChat = false
+				for i = 1, #channels, 3 do
+					if channels[i+1] == "INSTANCE_CHAT" then
+						hasInstanceChat = true
+						break
+					end
+				end
+				
+				if hasInstanceChat then
+					return "INSTANCE_CHAT"
+				else
+					return "BATTLEGROUND"
+				end
+			-- Regular group hierarchy - raid takes precedence over party
+			elseif IsInRaid() and self.settings.announceRaid then
+				return "RAID"
+			elseif IsInGroup() and not IsInRaid() and self.settings.announceParty then
+				return "PARTY"
+			end
+			
+			return nil -- No appropriate channel or announcements disabled
+		end
+
+		-- Send message with proper rate limiting and error handling
+		local currentTime = GetTime()
+		local COOLDOWN_TIME = 1.5 -- Slightly longer cooldown for better reliability
+
+		-- Only attempt to send if enough time has passed since last announcement
+		if (currentTime - self.lastAnnounceTime) > COOLDOWN_TIME then
+			local channel = getAppropriateChannel()
+			
+			-- Only send if we have a valid channel (which means the appropriate setting is enabled)
+			if channel then
+				-- Use pcall for error handling to prevent any message sending failures
+				-- from breaking the addon's functionality
+				local success, err = pcall(function()
+					SendChatMessage(socialMessage, channel)
+				end)
+				
+				if success then
+					self.lastAnnounceTime = currentTime
+				end
+				-- We silently fail if the message doesn't send - users generally
+				-- don't need to know about chat throttling or other temporary issues
+			end
+		end
         
 		-- Play sound if enabled - with safer error handling
 		if isNewRecord and self.settings.playSoundOnRecord then
